@@ -203,6 +203,39 @@
   ::-webkit-scrollbar{ width:6px; }
   ::-webkit-scrollbar-thumb{ background:var(--border); border-radius:3px; }
 
+  /* ---------- About ---------- */
+  .about-btn{
+    background:none; border:1px solid var(--border); color:var(--muted); font-family:var(--mono);
+    font-size:10px; letter-spacing:0.08em; text-transform:uppercase; padding:4px 10px; border-radius:5px;
+    cursor:pointer; margin-left:2px; transition:border-color 0.15s ease, color 0.15s ease;
+  }
+  .about-btn:hover{ border-color:var(--amber); color:var(--amber); }
+
+  .about-overlay{
+    position:fixed; inset:0; z-index:2000; background:rgba(6,10,20,0.65);
+    backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .about-modal{
+    width:100%; max-width:480px; max-height:80vh; overflow-y:auto;
+  }
+  .about-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .about-header h2{ font-family:var(--display); font-size:18px; font-weight:600; margin:0; color:var(--text); }
+  .about-close{
+    background:none; border:1px solid var(--border); color:var(--muted); width:28px; height:28px;
+    border-radius:6px; cursor:pointer; font-size:13px; flex-shrink:0;
+  }
+  .about-close:hover{ border-color:var(--coral); color:var(--coral); }
+  .about-body h3{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:0.1em; text-transform:uppercase;
+    color:var(--amber); margin:16px 0 6px 0;
+  }
+  .about-body h3:first-child{ margin-top:0; }
+  .about-body p{ font-size:13px; line-height:1.65; color:var(--text); margin:0 0 4px 0; }
+  .about-body p.muted{ color:var(--muted); font-size:12px; }
+  .about-link{ color:var(--amber); text-decoration:none; border-bottom:1px solid rgba(255,179,71,0.4); }
+  .about-link:hover{ border-bottom-color:var(--amber); }
+
   /* ---------- Responsive ---------- */
   @media (max-width: 760px){
     #app{ height:auto; min-height:100vh; overflow:visible; }
@@ -226,6 +259,7 @@
     <div class="brand">
       <h1>HEAT ALERT</h1>
       <span class="tag">LST Ground Track</span>
+      <button id="aboutBtn" class="about-btn">About</button>
     </div>
     <div class="clockwrap">
       <div class="clock" id="utcClock">00:00:00 UTC</div>
@@ -303,6 +337,31 @@
       <div class="legend-note">Imagery has daily gaps where cloud cover blocked the satellite pass. Source: NASA GIBS (MODIS Terra) &amp; NASA POWER.</div>
     </div>
   </aside>
+
+  <div id="aboutOverlay" class="about-overlay" hidden>
+    <div class="about-modal panel">
+      <div class="about-header">
+        <h2>About Heat Alert</h2>
+        <button id="aboutClose" class="about-close" aria-label="Close">✕</button>
+      </div>
+      <div class="about-body">
+        <p>Heat Alert shows how hot the Earth's surface is, anywhere, on any day since 2012.</p>
+
+        <h3>Map layer</h3>
+        <p>The colored map comes from NASA's Terra satellite (MODIS instrument), delivered through NASA GIBS. It updates daily with roughly a two-day processing delay, and its archive runs back to May 2012. Cloud cover can leave gaps in a given day's image.</p>
+
+        <h3>Click to inspect</h3>
+        <p>Clicking the map queries NASA POWER for the skin temperature at that exact point, along with its history back to 1981. Pin up to three locations to compare their trends on one chart.</p>
+
+        <h3>Built with</h3>
+        <p>Leaflet for the map, Chart.js for trends, and basemap tiles from CARTO.</p>
+        <p class="muted">No account, no tracking, no backend — every request goes straight from your browser to NASA's public APIs.</p>
+
+        <h3>Made by</h3>
+        <p>ExtremeSam — <a href="https://github.com/extremesam" target="_blank" rel="noopener noreferrer" class="about-link">github.com/extremesam</a></p>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -672,6 +731,19 @@
     }, function(err){
       alert('Location unavailable: ' + err.message);
     });
+  });
+
+  // ============ About modal ============
+  var aboutOverlay = document.getElementById('aboutOverlay');
+  function openAbout(){ aboutOverlay.hidden = false; }
+  function closeAbout(){ aboutOverlay.hidden = true; }
+  document.getElementById('aboutBtn').addEventListener('click', openAbout);
+  document.getElementById('aboutClose').addEventListener('click', closeAbout);
+  aboutOverlay.addEventListener('click', function(e){
+    if (e.target === aboutOverlay) closeAbout();
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && !aboutOverlay.hidden) closeAbout();
   });
 
 })();
