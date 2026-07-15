@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Heat Alert — Global Land Surface Temperature</title>
+<meta name="description" content="Live and historical global land surface temperature, from NASA satellite imagery.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" integrity="sha512-puBpdR0798OZvTTbP4A8Ix/l+A4dHDD0DGqYW6RQ+9jxkRFclaxxQb/SJAWZfWAkuyeQUytO7+7N4QKrDh+drA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+<style>
+  :root{
+    --bg:#0B1220;
+    --panel:#131C2E;
+    --panel-2:#0F1728;
+    --border:#26334A;
+    --text:#E7ECF5;
+    --muted:#8B99B3;
+    --amber:#FFB347;
+    --cyan:#4FC3E8;
+    --coral:#FF7A7A;
+    --mono:'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+    --sans:'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    --display:'Space Grotesk', var(--sans);
+  }
+
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; height:100%; background:var(--bg); color:var(--text); font-family:var(--sans); }
+
+  #app{ position:relative; width:100%; height:100vh; overflow:hidden; }
+
+  /* ---------- Topbar ---------- */
+  #topbar{
+    position:absolute; top:0; left:0; right:0; z-index:900;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 20px;
+    background:linear-gradient(to bottom, rgba(11,18,32,0.92), rgba(11,18,32,0));
+    pointer-events:none;
+  }
+  #topbar .brand{ display:flex; align-items:baseline; gap:10px; pointer-events:auto; }
+  #topbar .brand h1{
+    font-family:var(--display); font-weight:700; font-size:18px; letter-spacing:0.02em; margin:0; color:var(--text);
+  }
+  #topbar .brand .tag{
+    font-family:var(--mono); font-size:10.5px; color:var(--muted); letter-spacing:0.08em; text-transform:uppercase;
+    border-left:1px solid var(--border); padding-left:10px;
+  }
+  #topbar .clockwrap{
+    font-family:var(--mono); font-size:12px; color:var(--muted); text-align:right; pointer-events:auto;
+  }
+  #topbar .clockwrap .clock{ color:var(--amber); font-size:13px; letter-spacing:0.03em; }
+
+  /* ---------- Map ---------- */
+  #map{ position:absolute; inset:0; background:#060a14; }
+  .leaflet-container{ background:#060a14; font-family:var(--sans); }
+
+  /* ---------- Floating panels ---------- */
+  .panel{
+    background:rgba(19,28,46,0.88);
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+    border:1px solid var(--border);
+    border-radius:12px;
+    box-shadow:0 8px 30px rgba(0,0,0,0.35);
+    padding:16px;
+  }
+  .panel h2{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:0.14em; text-transform:uppercase;
+    color:var(--muted); margin:0 0 12px 0; display:flex; align-items:center; gap:8px;
+  }
+  .panel h2::before{ content:''; width:6px; height:6px; border-radius:50%; background:var(--amber); box-shadow:0 0 6px var(--amber); }
+
+  #console{
+    position:absolute; left:20px; bottom:20px; z-index:900; width:340px; max-width:calc(100vw - 40px);
+  }
+  #sidepanel{
+    position:absolute; right:20px; top:74px; bottom:20px; z-index:900; width:320px; max-width:calc(100vw - 40px);
+    display:flex; flex-direction:column; gap:14px; overflow-y:auto;
+  }
+
+  /* ---------- Console: date + slider ---------- */
+  .date-readout{
+    font-family:var(--mono); font-size:22px; font-weight:600; color:var(--amber); letter-spacing:0.02em; margin-bottom:10px;
+  }
+  .cal-row{ display:flex; gap:8px; margin-bottom:10px; }
+  .cal-field{ flex:1; display:flex; flex-direction:column; gap:4px; }
+  .cal-field label{ font-family:var(--mono); font-size:9.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; }
+  input[type="date"]{
+    background:var(--panel-2); border:1px solid var(--border); border-radius:6px; color:var(--text);
+    font-family:var(--mono); font-size:11.5px; padding:6px 6px; width:100%; color-scheme:dark;
+  }
+  .span-label{ font-family:var(--mono); font-size:10.5px; color:var(--muted); margin-bottom:8px; }
+
+  input[type="range"]{
+    -webkit-appearance:none; width:100%; height:4px; border-radius:2px; background:var(--border); outline:none; margin:6px 0;
+  }
+  input[type="range"]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:var(--amber);
+    border:2px solid #0B1220; cursor:pointer; box-shadow:0 0 8px rgba(255,179,71,0.6);
+  }
+  input[type="range"]::-moz-range-thumb{
+    width:14px; height:14px; border-radius:50%; background:var(--amber); border:2px solid #0B1220; cursor:pointer;
+  }
+  .slider-block{ margin-bottom:14px; }
+  .slider-ends{ display:flex; justify-content:space-between; font-family:var(--mono); font-size:9px; color:var(--muted); margin-top:2px; }
+
+  .opacity-row{ display:flex; align-items:center; gap:10px; }
+  .opacity-row label{ font-family:var(--mono); font-size:9.5px; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; white-space:nowrap; }
+
+  /* ---------- Legend ---------- */
+  .legend-bar{
+    height:8px; border-radius:4px; margin:8px 0 4px 0;
+    background:linear-gradient(to right, #1b1f6b, #2f6fb0, #4FC3E8, #8fe58a, #ffe066, #FFB347, #d1352b);
+  }
+  .legend-ends{ display:flex; justify-content:space-between; font-family:var(--mono); font-size:9.5px; color:var(--muted); }
+  .legend-note{ font-size:10.5px; color:var(--muted); margin-top:8px; line-height:1.5; }
+
+  /* ---------- Sidepanel ---------- */
+  .locate-btn{
+    width:100%; background:var(--panel-2); border:1px solid var(--border); color:var(--text);
+    font-family:var(--sans); font-size:12.5px; font-weight:500; padding:9px 10px; border-radius:8px;
+    cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:12px;
+    transition:border-color 0.15s ease, background 0.15s ease;
+  }
+  .locate-btn:hover{ border-color:var(--amber); background:#16213a; }
+  .locate-btn:active{ transform:translateY(1px); }
+
+  .pin-row{
+    display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--border);
+  }
+  .pin-row:last-child{ border-bottom:none; }
+  .swatch{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+  .pin-label{ font-family:var(--mono); font-size:11px; color:var(--text); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pin-remove{
+    background:none; border:none; color:var(--muted); cursor:pointer; font-size:13px; padding:2px 6px; border-radius:4px;
+  }
+  .pin-remove:hover{ color:var(--coral); background:rgba(255,122,122,0.1); }
+  .empty{ font-size:11.5px; color:var(--muted); line-height:1.5; padding:4px 0 8px 0; }
+
+  .trend-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  select#trendWindow{
+    background:var(--panel-2); border:1px solid var(--border); color:var(--text); font-family:var(--mono);
+    font-size:10.5px; padding:5px 6px; border-radius:6px;
+  }
+  .chart-wrap{ position:relative; height:150px; }
+  #trendChart{ width:100% !important; height:100% !important; }
+  .chart-empty{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-size:11px; color:var(--muted); text-align:center; padding:0 20px; line-height:1.5;
+  }
+
+  /* ---------- Reticle / pin markers ---------- */
+  .reticle-icon{ background:none; border:none; }
+  .reticle{ position:relative; width:26px; height:26px; }
+  .reticle span{
+    position:absolute; inset:0; border:1.5px solid var(--amber); border-radius:50%; opacity:0;
+    animation:reticleScan 0.7s ease-out forwards;
+  }
+  .reticle span:nth-child(2){ animation-delay:0.15s; }
+  .reticle::after{
+    content:''; position:absolute; top:50%; left:50%; width:3px; height:3px; margin:-1.5px;
+    background:var(--amber); border-radius:50%;
+  }
+  @keyframes reticleScan{ 0%{ transform:scale(0.15); opacity:1; } 100%{ transform:scale(1); opacity:0.85; } }
+
+  .pin-dot{ background:none; border:none; }
+  .pin-dot span{
+    display:block; width:12px; height:12px; border-radius:50%; border:2px solid #0B1220;
+    box-shadow:0 0 6px rgba(0,0,0,0.5);
+  }
+
+  /* ---------- Popup ---------- */
+  .scan-popup .leaflet-popup-content-wrapper{
+    background:var(--panel); color:var(--text); border:1px solid var(--border); border-radius:8px;
+  }
+  .scan-popup .leaflet-popup-tip{ background:var(--panel); border:1px solid var(--border); }
+  .scan-popup .leaflet-popup-content{ margin:10px 12px; }
+  .scan-readout .coords{ font-family:var(--mono); font-size:10.5px; color:var(--muted); }
+  .scan-readout .reading{ font-family:var(--mono); font-size:19px; font-weight:600; color:var(--amber); margin:4px 0 8px 0; }
+  .popup-pin-btn{
+    background:var(--panel-2); border:1px solid var(--border); color:var(--text); font-family:var(--sans);
+    font-size:11.5px; padding:6px 10px; border-radius:6px; cursor:pointer; width:100%;
+  }
+  .popup-pin-btn:hover:not(:disabled){ border-color:var(--amber); }
+  .popup-pin-btn:disabled{ opacity:0.5; cursor:not-allowed; }
+
+  /* ---------- Error banner ---------- */
+  #errorBanner{
+    position:absolute; top:64px; left:50%; transform:translateX(-50%); z-index:1000;
+    background:rgba(255,122,122,0.14); border:1px solid var(--coral); color:var(--text);
+    font-size:12px; padding:9px 16px; border-radius:8px; max-width:min(480px, calc(100vw - 40px));
+    text-align:center; line-height:1.5;
+  }
+  #errorBanner button{
+    background:none; border:none; color:var(--coral); font-family:var(--sans); font-size:11.5px;
+    text-decoration:underline; cursor:pointer; margin-left:8px; padding:0;
+  }
+
+  ::-webkit-scrollbar{ width:6px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border); border-radius:3px; }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 760px){
+    #app{ height:auto; min-height:100vh; overflow:visible; }
+    #map{ position:relative; height:52vh; min-height:320px; }
+    #topbar{ position:relative; background:var(--bg); padding:12px 16px; }
+    #console, #sidepanel{
+      position:relative; inset:auto; left:auto; right:auto; top:auto; bottom:auto;
+      width:100%; max-width:100%; margin:12px 16px; height:auto;
+    }
+    #sidepanel{ margin-top:0; }
+    body{ padding-bottom:16px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="map"></div>
+
+  <header id="topbar">
+    <div class="brand">
+      <h1>HEAT ALERT</h1>
+      <span class="tag">LST Ground Track</span>
+    </div>
+    <div class="clockwrap">
+      <div class="clock" id="utcClock">00:00:00 UTC</div>
+      <div>MODIS Terra · Land Surface Temp</div>
+    </div>
+  </header>
+
+  <div id="errorBanner" hidden>
+    NASA POWER data isn't reachable from this page right now — the map layer still works, but trend readings may be unavailable.
+    <button id="dismissBanner">Dismiss</button>
+  </div>
+
+  <section id="console" class="panel">
+    <h2>Scan Date</h2>
+    <div class="date-readout" id="dateReadout">—</div>
+
+    <div class="cal-row">
+      <div class="cal-field">
+        <label for="rangeStart">From</label>
+        <input type="date" id="rangeStart">
+      </div>
+      <div class="cal-field">
+        <label for="rangeEnd">To</label>
+        <input type="date" id="rangeEnd">
+      </div>
+    </div>
+    <div class="span-label" id="spanLabel">— day window</div>
+
+    <div class="slider-block">
+      <input type="range" id="dateSlider" min="0" max="30" value="30" step="1">
+      <div class="slider-ends">
+        <span id="sliderStartLabel">—</span>
+        <span id="sliderEndLabel">—</span>
+      </div>
+    </div>
+
+    <div class="opacity-row">
+      <label for="opacitySlider">Layer opacity</label>
+      <input type="range" id="opacitySlider" min="10" max="100" value="75" step="5">
+    </div>
+  </section>
+
+  <aside id="sidepanel">
+    <div class="panel">
+      <h2>Your Location</h2>
+      <button class="locate-btn" id="locateBtn">📍 Use my location</button>
+      <div style="font-size:11px; color:var(--muted); line-height:1.5;">Click anywhere on the map to read the surface temperature there.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Pinned Sites</h2>
+      <div id="pinList"></div>
+    </div>
+
+    <div class="panel">
+      <div class="trend-header">
+        <h2 style="margin:0;">Trend</h2>
+        <select id="trendWindow">
+          <option value="30">30 days</option>
+          <option value="90" selected>90 days</option>
+          <option value="180">180 days</option>
+          <option value="365">1 year</option>
+        </select>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="trendChart"></canvas>
+        <div class="chart-empty" id="chartEmpty">Click the map and pin a location to see its temperature trend here.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Legend · Surface Temp</h2>
+      <div class="legend-bar"></div>
+      <div class="legend-ends"><span>−25°C</span><span>45°C</span></div>
+      <div class="legend-note">Imagery has daily gaps where cloud cover blocked the satellite pass. Source: NASA GIBS (MODIS Terra) &amp; NASA POWER.</div>
+    </div>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" integrity="sha512-BwHfrr4c9kmRkLw6iXFdzcdWV/PGkVgiIyIWLLlTSXzWQzxuSg4DiQUCpauz/EWjgk5TYQqX/kvn9pG1NpYfqg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js" integrity="sha512-uAv1B/Ta6NPgIF3XOJvgTAeVCVpce7ZzMr/dK5r5adRDsAoQ+hCswTHkS7ZzHaSjb+O5FL+xVjPjknwlL/dgUw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+<script>
+(function(){
+  "use strict";
+
+  // ============ Constants ============
+  var GIBS_LAYER = 'MODIS_Terra_Land_Surface_Temp_Day';
+  var GIBS_TMS = 'GoogleMapsCompatible_Level7';
+  var GIBS_MIN_DATE = '2012-05-08';
+  var POWER_BASE = 'https://power.larc.nasa.gov/api/temporal/daily/point';
+  var PIN_COLORS = ['#FFB347', '#4FC3E8', '#FF7A7A'];
+
+  // ============ Date helpers (UTC) ============
+  function pad(n){ return n < 10 ? '0' + n : '' + n; }
+  function fmtDate(d){ return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()); }
+  function fmtCompact(d){ return fmtDate(d).split('-').join(''); }
+  function parseDate(s){
+    var parts = s.split('-').map(Number);
+    return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+  }
+  function addDays(d, n){
+    var r = new Date(d.getTime());
+    r.setUTCDate(r.getUTCDate() + n);
+    return r;
+  }
+  function daysBetween(a, b){ return Math.round((b.getTime() - a.getTime()) / 86400000); }
+
+  var now = new Date();
+  var todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  var latestAvailable = addDays(todayUTC, -2); // buffer for satellite processing latency
+  var minDate = parseDate(GIBS_MIN_DATE);
+
+  var rangeStart = addDays(latestAvailable, -30);
+  var rangeEnd = latestAvailable;
+  var currentDate = rangeEnd;
+
+  // ============ Map ============
+  var map = L.map('map', {
+    worldCopyJump: true, minZoom: 2, maxZoom: 10, zoomControl: false
+  }).setView([15, 10], 3);
+
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    subdomains: 'abcd', maxZoom: 19, detectRetina: true,
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+  }).addTo(map);
+
+  function gibsUrl(date){
+    return 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/' + GIBS_LAYER +
+      '/default/' + fmtDate(date) + '/' + GIBS_TMS + '/{z}/{y}/{x}.png';
+  }
+
+  var lstLayer = L.tileLayer(gibsUrl(currentDate), {
+    maxNativeZoom: 7, maxZoom: 10, opacity: 0.75, tileSize: 256,
+    attribution: 'NASA EOSDIS GIBS / MODIS Terra LST'
+  }).addTo(map);
+
+  window.addEventListener('resize', function(){ map.invalidateSize(); });
+
+  // ============ Console: date range + slider ============
+  var rangeStartInput = document.getElementById('rangeStart');
+  var rangeEndInput = document.getElementById('rangeEnd');
+  var slider = document.getElementById('dateSlider');
+  var dateReadout = document.getElementById('dateReadout');
+  var spanLabel = document.getElementById('spanLabel');
+  var sliderStartLabel = document.getElementById('sliderStartLabel');
+  var sliderEndLabel = document.getElementById('sliderEndLabel');
+
+  rangeStartInput.min = GIBS_MIN_DATE;
+  rangeStartInput.max = fmtDate(latestAvailable);
+  rangeEndInput.min = GIBS_MIN_DATE;
+  rangeEndInput.max = fmtDate(latestAvailable);
+  rangeStartInput.value = fmtDate(rangeStart);
+  rangeEndInput.value = fmtDate(rangeEnd);
+
+  var sliderDebounce = null;
+
+  function updateLayerDateTiles(date){
+    currentDate = date;
+    lstLayer.setUrl(gibsUrl(date));
+  }
+
+  function refreshSliderBounds(){
+    var s = parseDate(rangeStartInput.value);
+    var e = parseDate(rangeEndInput.value);
+    if (e.getTime() < s.getTime()){ rangeEndInput.value = rangeStartInput.value; e = s; }
+    rangeStart = s;
+    rangeEnd = e;
+    var span = Math.max(0, daysBetween(rangeStart, rangeEnd));
+    slider.max = String(span);
+    slider.value = String(span);
+    dateReadout.textContent = fmtDate(rangeEnd);
+    sliderStartLabel.textContent = fmtDate(rangeStart);
+    sliderEndLabel.textContent = fmtDate(rangeEnd);
+    spanLabel.textContent = (span + 1) + '-day window';
+    updateLayerDateTiles(rangeEnd);
+  }
+
+  slider.addEventListener('input', function(){
+    var d = addDays(rangeStart, Number(slider.value));
+    dateReadout.textContent = fmtDate(d);
+    clearTimeout(sliderDebounce);
+    sliderDebounce = setTimeout(function(){ updateLayerDateTiles(d); }, 120);
+  });
+  rangeStartInput.addEventListener('change', refreshSliderBounds);
+  rangeEndInput.addEventListener('change', refreshSliderBounds);
+
+  refreshSliderBounds();
+
+  document.getElementById('opacitySlider').addEventListener('input', function(e){
+    lstLayer.setOpacity(Number(e.target.value) / 100);
+  });
+
+  // ============ Clock ============
+  function tick(){
+    var n = new Date();
+    document.getElementById('utcClock').textContent = n.toISOString().substring(11, 19) + ' UTC';
+  }
+  setInterval(tick, 1000);
+  tick();
+
+  // ============ Error banner ============
+  var bannerShown = false;
+  function handlePowerError(){
+    if (bannerShown) return;
+    bannerShown = true;
+    document.getElementById('errorBanner').hidden = false;
+  }
+  document.getElementById('dismissBanner').addEventListener('click', function(){
+    document.getElementById('errorBanner').hidden = true;
+  });
+
+  // ============ NASA POWER fetches ============
+  function fetchLatestTS(lat, lng){
+    var end = latestAvailable;
+    var start = addDays(end, -6);
+    var url = POWER_BASE + '?parameters=TS&community=RE&longitude=' + lng +
+      '&latitude=' + lat + '&start=' + fmtCompact(start) + '&end=' + fmtCompact(end) + '&format=JSON';
+    return fetch(url).then(function(res){
+      if (!res.ok) throw new Error('bad response');
+      return res.json();
+    }).then(function(json){
+      var vals = json.properties.parameter.TS;
+      var days = Object.keys(vals).sort();
+      for (var i = days.length - 1; i >= 0; i--){
+        var v = vals[days[i]];
+        if (v !== -999) return v;
+      }
+      return null;
+    }).catch(function(){
+      handlePowerError();
+      return null;
+    });
+  }
+
+  function fetchSeries(lat, lng, windowDays){
+    var end = latestAvailable;
+    var start = addDays(end, -windowDays);
+    var startClamped = start.getTime() < minDate.getTime() ? minDate : start;
+    var url = POWER_BASE + '?parameters=TS&community=RE&longitude=' + lng +
+      '&latitude=' + lat + '&start=' + fmtCompact(startClamped) + '&end=' + fmtCompact(end) + '&format=JSON';
+    return fetch(url).then(function(res){
+      if (!res.ok) throw new Error('bad response');
+      return res.json();
+    }).then(function(json){
+      var vals = json.properties.parameter.TS;
+      return Object.keys(vals).sort().map(function(k){
+        return { date: k, value: vals[k] === -999 ? null : vals[k] };
+      });
+    }).catch(function(){
+      handlePowerError();
+      return [];
+    });
+  }
+
+  // ============ Pins ============
+  var pins = [];
+  var pinSeq = 0;
+  var scanMarker = null;
+
+  function reticleIcon(){
+    return L.divIcon({
+      className: 'reticle-icon',
+      html: '<div class="reticle"><span></span><span></span></div>',
+      iconSize: [26, 26], iconAnchor: [13, 13]
+    });
+  }
+  function dotIcon(color){
+    return L.divIcon({
+      className: 'pin-dot',
+      html: '<span style="background:' + color + '"></span>',
+      iconSize: [14, 14], iconAnchor: [7, 7]
+    });
+  }
+
+  function buildPopupHTML(lat, lng, reading){
+    var full = pins.length >= 3;
+    return '<div class="scan-readout">' +
+      '<div class="coords">' + lat.toFixed(3) + '\u00B0, ' + lng.toFixed(3) + '\u00B0</div>' +
+      '<div class="reading">' + reading + '</div>' +
+      '<button class="popup-pin-btn"' + (full ? ' disabled' : '') + '>' +
+      (full ? 'Pin limit reached (3)' : '+ Pin this location') + '</button>' +
+      '</div>';
+  }
+
+  function attachPinHandler(lat, lng, marker){
+    setTimeout(function(){
+      var btn = document.querySelector('.popup-pin-btn');
+      if (btn){
+        btn.onclick = function(){
+          addPin(lat, lng, marker);
+          map.closePopup();
+        };
+      }
+    }, 0);
+  }
+
+  map.on('click', function(e){
+    var lat = e.latlng.lat, lng = e.latlng.lng;
+    if (scanMarker){ map.removeLayer(scanMarker); scanMarker = null; }
+
+    var marker = L.marker(e.latlng, { icon: reticleIcon() }).addTo(map);
+    scanMarker = marker;
+
+    var popup = L.popup({ className: 'scan-popup', offset: [0, -10] })
+      .setContent(buildPopupHTML(lat, lng, 'reading\u2026'));
+    marker.bindPopup(popup).openPopup();
+    attachPinHandler(lat, lng, marker);
+
+    marker.on('popupclose', function(){
+      if (!marker._pinned){
+        map.removeLayer(marker);
+        if (scanMarker === marker) scanMarker = null;
+      }
+    });
+
+    fetchLatestTS(lat, lng).then(function(val){
+      if (marker !== scanMarker && !marker._pinned) return;
+      var text = val === null ? 'unavailable' : val.toFixed(1) + '\u00B0C';
+      marker.setPopupContent(buildPopupHTML(lat, lng, text));
+      attachPinHandler(lat, lng, marker);
+    });
+  });
+
+  function addPin(lat, lng, marker){
+    if (pins.length >= 3) return;
+    var color = PIN_COLORS[pins.length];
+    var id = 'pin' + (pinSeq++);
+
+    if (marker){
+      marker._pinned = true;
+      marker.setIcon(dotIcon(color));
+    } else {
+      marker = L.marker([lat, lng], { icon: dotIcon(color) }).addTo(map);
+      marker._pinned = true;
+    }
+
+    var pin = { id: id, lat: lat, lng: lng, color: color, marker: marker, label: lat.toFixed(2) + ', ' + lng.toFixed(2), data: null };
+    pins.push(pin);
+    renderPinList();
+    renderChart();
+
+    var windowDays = Number(document.getElementById('trendWindow').value);
+    fetchSeries(lat, lng, windowDays).then(function(series){
+      pin.data = series;
+      renderChart();
+    });
+  }
+
+  function removePin(id){
+    var idx = pins.findIndex(function(p){ return p.id === id; });
+    if (idx === -1) return;
+    map.removeLayer(pins[idx].marker);
+    pins.splice(idx, 1);
+    renderPinList();
+    renderChart();
+  }
+
+  function renderPinList(){
+    var el = document.getElementById('pinList');
+    if (pins.length === 0){
+      el.innerHTML = '<div class="empty">Click the map, then "Pin this location" to compare up to 3 sites.</div>';
+      return;
+    }
+    el.innerHTML = pins.map(function(p){
+      return '<div class="pin-row">' +
+        '<span class="swatch" style="background:' + p.color + '"></span>' +
+        '<span class="pin-label">' + p.label + '</span>' +
+        '<button class="pin-remove" data-id="' + p.id + '" aria-label="Remove">\u2715</button>' +
+        '</div>';
+    }).join('');
+    el.querySelectorAll('.pin-remove').forEach(function(btn){
+      btn.onclick = function(){ removePin(btn.getAttribute('data-id')); };
+    });
+  }
+
+  // ============ Chart ============
+  var chart = null;
+  function renderChart(){
+    var empty = document.getElementById('chartEmpty');
+    var withData = pins.filter(function(p){ return p.data && p.data.length; });
+
+    if (withData.length === 0){
+      empty.style.display = 'flex';
+      if (chart){ chart.destroy(); chart = null; }
+      return;
+    }
+    empty.style.display = 'none';
+
+    var datasets = withData.map(function(p){
+      return {
+        label: p.label,
+        data: p.data.map(function(d){ return { x: d.date, y: d.value }; }),
+        borderColor: p.color,
+        backgroundColor: p.color,
+        spanGaps: true,
+        tension: 0.25,
+        pointRadius: 0,
+        borderWidth: 2
+      };
+    });
+
+    var ctx = document.getElementById('trendChart').getContext('2d');
+    if (chart){ chart.destroy(); }
+    chart = new Chart(ctx, {
+      type: 'line',
+      data: { datasets: datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: { type: 'category', ticks: { color: '#8B99B3', maxTicksLimit: 5, font: { family: 'IBM Plex Mono', size: 9 } }, grid: { color: '#26334A' } },
+          y: { ticks: { color: '#8B99B3', font: { family: 'IBM Plex Mono', size: 9 } }, grid: { color: '#26334A' }, title: { display: true, text: '\u00B0C', color: '#8B99B3', font: { size: 10 } } }
+        },
+        plugins: { legend: { labels: { color: '#E7ECF5', font: { family: 'IBM Plex Sans', size: 10 }, boxWidth: 10 } } }
+      }
+    });
+  }
+
+  document.getElementById('trendWindow').addEventListener('change', function(){
+    var w = Number(document.getElementById('trendWindow').value);
+    pins.forEach(function(p){
+      fetchSeries(p.lat, p.lng, w).then(function(series){
+        p.data = series;
+        renderChart();
+      });
+    });
+  });
+
+  renderPinList();
+
+  // ============ Geolocation ============
+  document.getElementById('locateBtn').addEventListener('click', function(){
+    if (!navigator.geolocation){
+      alert('Geolocation is not supported by this browser.');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(function(pos){
+      var lat = pos.coords.latitude, lng = pos.coords.longitude;
+      map.setView([lat, lng], 6);
+      map.fire('click', { latlng: L.latLng(lat, lng) });
+    }, function(err){
+      alert('Location unavailable: ' + err.message);
+    });
+  });
+
+})();
+</script>
+</body>
+</html>
