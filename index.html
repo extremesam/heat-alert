@@ -538,11 +538,15 @@
   function fetchLatestTS(lat, lng){
     var end = latestAvailable;
     var start = addDays(end, -6);
-    var url = POWER_BASE + '?parameters=TS&community=RE&longitude=' + lng +
+    var url = POWER_BASE + '?parameters=TS&community=AG&longitude=' + lng +
       '&latitude=' + lat + '&start=' + fmtCompact(start) + '&end=' + fmtCompact(end) + '&format=JSON';
     return queuePowerRequest(function(){
       return fetch(url).then(function(res){
-        if (!res.ok) throw new Error('bad response');
+        if (!res.ok){
+          return res.text().then(function(body){
+            throw new Error('POWER API ' + res.status + ': ' + body.slice(0, 200));
+          });
+        }
         return res.json();
       });
     }).then(function(json){
@@ -554,7 +558,7 @@
       }
       return null;
     }).catch(function(err){
-      console.error('Heat Alert: latest-reading fetch failed', err);
+      console.error('Heat Alert: latest-reading fetch failed —', err.message);
       handlePowerError();
       return null;
     });
@@ -564,11 +568,15 @@
     var end = latestAvailable;
     var start = addDays(end, -windowDays);
     var startClamped = start.getTime() < minDate.getTime() ? minDate : start;
-    var url = POWER_BASE + '?parameters=TS&community=RE&longitude=' + lng +
+    var url = POWER_BASE + '?parameters=TS&community=AG&longitude=' + lng +
       '&latitude=' + lat + '&start=' + fmtCompact(startClamped) + '&end=' + fmtCompact(end) + '&format=JSON';
     return queuePowerRequest(function(){
       return fetch(url).then(function(res){
-        if (!res.ok) throw new Error('bad response');
+        if (!res.ok){
+          return res.text().then(function(body){
+            throw new Error('POWER API ' + res.status + ': ' + body.slice(0, 200));
+          });
+        }
         return res.json();
       });
     }).then(function(json){
@@ -577,7 +585,7 @@
         return { date: k, value: vals[k] === -999 ? null : vals[k] };
       });
     }).catch(function(err){
-      console.error('Heat Alert: trend fetch failed', err);
+      console.error('Heat Alert: trend fetch failed —', err.message);
       handlePowerError();
       return [];
     });
