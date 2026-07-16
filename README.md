@@ -4,9 +4,9 @@
 
 Heat Alert is a single-page web app that renders a color-coded map of Earth's land surface temperature, lets you click anywhere for a live reading, and compares up to three locations' temperature trends over time. No backend, no database, no build step — one HTML file, hosted on GitHub Pages.
 
-**[→ Live demo](https://extremesam.github.io/heat-alert/)** *(replace with your GitHub Pages URL)*
+**[→ Live demo](https://extremesam.github.io/heat-alert/)** 
 
-![Heat Alert screenshot](/screenshot.png) *(add a screenshot or GIF here — see tips below)*
+![Heat Alert screenshot](/screenshot.png) 
 
 ---
 
