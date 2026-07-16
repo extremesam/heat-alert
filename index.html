@@ -142,6 +142,13 @@
   .empty{ font-size:11.5px; color:var(--muted); line-height:1.5; padding:4px 0 8px 0; }
 
   .trend-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .trend-header-controls{ display:flex; align-items:center; gap:6px; }
+  .expand-btn{
+    background:var(--panel-2); border:1px solid var(--border); color:var(--muted); width:26px; height:26px;
+    border-radius:6px; cursor:pointer; font-size:13px; line-height:1; display:flex; align-items:center; justify-content:center;
+    transition:border-color 0.15s ease, color 0.15s ease;
+  }
+  .expand-btn:hover{ border-color:var(--amber); color:var(--amber); }
   select#trendWindow{
     background:var(--panel-2); border:1px solid var(--border); color:var(--text); font-family:var(--mono);
     font-size:10.5px; padding:5px 6px; border-radius:6px;
@@ -237,6 +244,10 @@
   .about-link{ color:var(--amber); text-decoration:none; border-bottom:1px solid rgba(255,179,71,0.4); }
   .about-link:hover{ border-bottom-color:var(--amber); }
 
+  .chart-modal{ width:100%; max-width:920px; max-height:88vh; }
+  .chart-wrap-large{ position:relative; height:min(60vh, 520px); margin-top:6px; }
+  .chart-wrap-large canvas{ width:100% !important; height:100% !important; }
+
   /* ---------- Responsive ---------- */
   @media (max-width: 760px){
     #app{ height:auto; min-height:100vh; overflow:visible; }
@@ -318,12 +329,15 @@
     <div class="panel">
       <div class="trend-header">
         <h2 style="margin:0;">Trend</h2>
-        <select id="trendWindow">
-          <option value="30">30 days</option>
-          <option value="90" selected>90 days</option>
-          <option value="180">180 days</option>
-          <option value="365">1 year</option>
-        </select>
+        <div class="trend-header-controls">
+          <select id="trendWindow">
+            <option value="30">30 days</option>
+            <option value="90" selected>90 days</option>
+            <option value="180">180 days</option>
+            <option value="365">1 year</option>
+          </select>
+          <button id="expandChartBtn" class="expand-btn" title="Enlarge chart" aria-label="Enlarge chart">⤢</button>
+        </div>
       </div>
       <div class="chart-wrap">
         <canvas id="trendChart"></canvas>
@@ -360,6 +374,19 @@
 
         <h3>Made by</h3>
         <p>ExtremeSam — <a href="https://github.com/extremesam" target="_blank" rel="noopener noreferrer" class="about-link">github.com/extremesam</a></p>
+      </div>
+    </div>
+  </div>
+
+  <div id="chartOverlay" class="about-overlay">
+    <div class="chart-modal panel">
+      <div class="about-header">
+        <h2>Temperature Trend</h2>
+        <button id="chartCloseBtn" class="about-close" aria-label="Close">✕</button>
+      </div>
+      <div class="chart-wrap-large">
+        <canvas id="trendChartLarge"></canvas>
+        <div class="chart-empty" id="chartEmptyLarge">Click the map and pin a location to see its temperature trend here.</div>
       </div>
     </div>
   </div>
@@ -501,14 +528,23 @@
   });
 
   // ============ NASA POWER fetches ============
+  var powerQueue = Promise.resolve();
+  function queuePowerRequest(fn){
+    var result = powerQueue.then(fn, fn);
+    powerQueue = result.then(function(){}, function(){});
+    return result;
+  }
+
   function fetchLatestTS(lat, lng){
     var end = latestAvailable;
     var start = addDays(end, -6);
     var url = POWER_BASE + '?parameters=TS&community=RE&longitude=' + lng +
       '&latitude=' + lat + '&start=' + fmtCompact(start) + '&end=' + fmtCompact(end) + '&format=JSON';
-    return fetch(url).then(function(res){
-      if (!res.ok) throw new Error('bad response');
-      return res.json();
+    return queuePowerRequest(function(){
+      return fetch(url).then(function(res){
+        if (!res.ok) throw new Error('bad response');
+        return res.json();
+      });
     }).then(function(json){
       var vals = json.properties.parameter.TS;
       var days = Object.keys(vals).sort();
@@ -517,7 +553,8 @@
         if (v !== -999) return v;
       }
       return null;
-    }).catch(function(){
+    }).catch(function(err){
+      console.error('Heat Alert: latest-reading fetch failed', err);
       handlePowerError();
       return null;
     });
@@ -529,15 +566,18 @@
     var startClamped = start.getTime() < minDate.getTime() ? minDate : start;
     var url = POWER_BASE + '?parameters=TS&community=RE&longitude=' + lng +
       '&latitude=' + lat + '&start=' + fmtCompact(startClamped) + '&end=' + fmtCompact(end) + '&format=JSON';
-    return fetch(url).then(function(res){
-      if (!res.ok) throw new Error('bad response');
-      return res.json();
+    return queuePowerRequest(function(){
+      return fetch(url).then(function(res){
+        if (!res.ok) throw new Error('bad response');
+        return res.json();
+      });
     }).then(function(json){
       var vals = json.properties.parameter.TS;
       return Object.keys(vals).sort().map(function(k){
         return { date: k, value: vals[k] === -999 ? null : vals[k] };
       });
-    }).catch(function(){
+    }).catch(function(err){
+      console.error('Heat Alert: trend fetch failed', err);
       handlePowerError();
       return [];
     });
@@ -620,6 +660,7 @@
     if (marker){
       marker._pinned = true;
       marker.setIcon(dotIcon(color));
+      if (scanMarker === marker) scanMarker = null;
     } else {
       marker = L.marker([lat, lng], { icon: dotIcon(color) }).addTo(map);
       marker._pinned = true;
@@ -666,18 +707,10 @@
 
   // ============ Chart ============
   var chart = null;
-  function renderChart(){
-    var empty = document.getElementById('chartEmpty');
-    var withData = pins.filter(function(p){ return p.data && p.data.length; });
+  var chartLarge = null;
 
-    if (withData.length === 0){
-      empty.style.display = 'flex';
-      if (chart){ chart.destroy(); chart = null; }
-      return;
-    }
-    empty.style.display = 'none';
-
-    var datasets = withData.map(function(p){
+  function buildDatasets(){
+    return pins.filter(function(p){ return p.data && p.data.length; }).map(function(p){
       return {
         label: p.label,
         data: p.data.map(function(d){ return { x: d.date, y: d.value }; }),
@@ -689,22 +722,64 @@
         borderWidth: 2
       };
     });
+  }
 
-    var ctx = document.getElementById('trendChart').getContext('2d');
-    if (chart){ chart.destroy(); }
-    chart = new Chart(ctx, {
+  function emptyMessage(){
+    if (pins.length === 0) return 'Click the map and pin a location to see its temperature trend here.';
+    var allSettled = pins.every(function(p){ return p.data !== null; });
+    return allSettled
+      ? 'No trend data available for the pinned site(s) right now.'
+      : 'Loading trend data\u2026';
+  }
+
+  function renderChart(){
+    var empty = document.getElementById('chartEmpty');
+    var datasets = buildDatasets();
+
+    if (datasets.length === 0){
+      empty.textContent = emptyMessage();
+      empty.style.display = 'flex';
+      if (chart){ chart.destroy(); chart = null; }
+    } else {
+      empty.style.display = 'none';
+      var ctx = document.getElementById('trendChart').getContext('2d');
+      if (chart){ chart.destroy(); }
+      chart = new Chart(ctx, buildChartConfig(datasets, 9, 10));
+    }
+
+    if (chartOverlay && chartOverlay.classList.contains('open')) renderLargeChart();
+  }
+
+  function renderLargeChart(){
+    var emptyLarge = document.getElementById('chartEmptyLarge');
+    var datasets = buildDatasets();
+
+    if (datasets.length === 0){
+      emptyLarge.textContent = emptyMessage();
+      emptyLarge.style.display = 'flex';
+      if (chartLarge){ chartLarge.destroy(); chartLarge = null; }
+      return;
+    }
+    emptyLarge.style.display = 'none';
+    var ctx = document.getElementById('trendChartLarge').getContext('2d');
+    if (chartLarge){ chartLarge.destroy(); }
+    chartLarge = new Chart(ctx, buildChartConfig(datasets, 12, 13));
+  }
+
+  function buildChartConfig(datasets, tickSize, legendSize){
+    return {
       type: 'line',
       data: { datasets: datasets },
       options: {
         responsive: true, maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         scales: {
-          x: { type: 'category', ticks: { color: '#8B99B3', maxTicksLimit: 5, font: { family: 'IBM Plex Mono', size: 9 } }, grid: { color: '#26334A' } },
-          y: { ticks: { color: '#8B99B3', font: { family: 'IBM Plex Mono', size: 9 } }, grid: { color: '#26334A' }, title: { display: true, text: '\u00B0C', color: '#8B99B3', font: { size: 10 } } }
+          x: { type: 'category', ticks: { color: '#8B99B3', maxTicksLimit: 8, font: { family: 'IBM Plex Mono', size: tickSize } }, grid: { color: '#26334A' } },
+          y: { ticks: { color: '#8B99B3', font: { family: 'IBM Plex Mono', size: tickSize } }, grid: { color: '#26334A' }, title: { display: true, text: '\u00B0C', color: '#8B99B3', font: { size: tickSize + 1 } } }
         },
-        plugins: { legend: { labels: { color: '#E7ECF5', font: { family: 'IBM Plex Sans', size: 10 }, boxWidth: 10 } } }
+        plugins: { legend: { labels: { color: '#E7ECF5', font: { family: 'IBM Plex Sans', size: legendSize }, boxWidth: 10 } } }
       }
-    });
+    };
   }
 
   document.getElementById('trendWindow').addEventListener('change', function(){
@@ -736,6 +811,7 @@
 
   // ============ About modal ============
   var aboutOverlay = document.getElementById('aboutOverlay');
+  var chartOverlay = document.getElementById('chartOverlay');
   function openAbout(){ aboutOverlay.classList.add('open'); }
   function closeAbout(){ aboutOverlay.classList.remove('open'); }
   document.getElementById('aboutBtn').addEventListener('click', openAbout);
@@ -743,8 +819,21 @@
   aboutOverlay.addEventListener('click', function(e){
     if (e.target === aboutOverlay) closeAbout();
   });
+  document.getElementById('expandChartBtn').addEventListener('click', function(){
+    chartOverlay.classList.add('open');
+    renderLargeChart();
+  });
+  document.getElementById('chartCloseBtn').addEventListener('click', function(){
+    chartOverlay.classList.remove('open');
+  });
+  chartOverlay.addEventListener('click', function(e){
+    if (e.target === chartOverlay) chartOverlay.classList.remove('open');
+  });
+
   document.addEventListener('keydown', function(e){
-    if (e.key === 'Escape' && aboutOverlay.classList.contains('open')) closeAbout();
+    if (e.key !== 'Escape') return;
+    if (aboutOverlay.classList.contains('open')) closeAbout();
+    if (chartOverlay.classList.contains('open')) chartOverlay.classList.remove('open');
   });
 
 })();
