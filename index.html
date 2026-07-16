@@ -212,10 +212,11 @@
   .about-btn:hover{ border-color:var(--amber); color:var(--amber); }
 
   .about-overlay{
-    position:fixed; inset:0; z-index:2000; background:rgba(6,10,20,0.65);
+    display:none; position:fixed; inset:0; z-index:2000; background:rgba(6,10,20,0.65);
     backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px);
-    display:flex; align-items:center; justify-content:center; padding:20px;
+    align-items:center; justify-content:center; padding:20px;
   }
+  .about-overlay.open{ display:flex; }
   .about-modal{
     width:100%; max-width:480px; max-height:80vh; overflow-y:auto;
   }
@@ -338,7 +339,7 @@
     </div>
   </aside>
 
-  <div id="aboutOverlay" class="about-overlay" hidden>
+  <div id="aboutOverlay" class="about-overlay">
     <div class="about-modal panel">
       <div class="about-header">
         <h2>About Heat Alert</h2>
@@ -735,15 +736,15 @@
 
   // ============ About modal ============
   var aboutOverlay = document.getElementById('aboutOverlay');
-  function openAbout(){ aboutOverlay.hidden = false; }
-  function closeAbout(){ aboutOverlay.hidden = true; }
+  function openAbout(){ aboutOverlay.classList.add('open'); }
+  function closeAbout(){ aboutOverlay.classList.remove('open'); }
   document.getElementById('aboutBtn').addEventListener('click', openAbout);
   document.getElementById('aboutClose').addEventListener('click', closeAbout);
   aboutOverlay.addEventListener('click', function(e){
     if (e.target === aboutOverlay) closeAbout();
   });
   document.addEventListener('keydown', function(e){
-    if (e.key === 'Escape' && !aboutOverlay.hidden) closeAbout();
+    if (e.key === 'Escape' && aboutOverlay.classList.contains('open')) closeAbout();
   });
 
 })();
